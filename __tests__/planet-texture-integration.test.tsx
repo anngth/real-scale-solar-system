@@ -11,8 +11,10 @@
  * Requirements: 1.1, 1.2
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { Texture, TextureLoader, type MeshStandardMaterial } from "three";
+import { usePlanetMaterial } from "@/features/planet-rendering/application/usePlanetMaterial";
 import { Canvas } from "@react-three/fiber";
 import { Planet } from "@/features/planet-rendering/ui/planet/index";
 import { sunData, planetData } from "@/data/planet-data";
@@ -356,3 +358,74 @@ describe("Planet Component - Texture Integration", () => {
     }
   });
 });
+
+it("keeps the overview visible while the scene and modal share one detail request", async () => {
+  const planet = planetData.find((body) => body.name === "Mars")!;
+  const { overviewPath, texturePath } = PLANET_TEXTURES.Mars;
+  const overview = new Texture();
+  const detail = new Texture();
+  let resolveDetail!: (texture: Texture) => void;
+  const pendingDetail = new Promise<Texture>((resolve) => { resolveDetail = resolve; });
+  const loader = vi.spyOn(TextureLoader.prototype, "loadAsync").mockImplementation(
+    (path) => path === overviewPath ? Promise.resolve(overview) : pendingDetail,
+  );
+  textureCache.clear();
+
+  try {
+    type Quality = "overview" | "detail";
+    const scene = renderHook(({ quality }: { quality: Quality }) => usePlanetMaterial(planet, quality), {
+      initialProps: { quality: "overview" as Quality },
+    });
+    await waitFor(() => expect((scene.result.current as MeshStandardMaterial).map).toBe(overview));
+    expect(loader.mock.calls.map(([path]) => path)).toEqual([overviewPath]);
+
+    scene.rerender({ quality: "detail" });
+    const modal = renderHook(() => usePlanetMaterial(planet, "detail"));
+    expect(modal.result.current).toBe(scene.result.current);
+    expect(loader.mock.calls.map(([path]) => path)).toEqual([overviewPath, texturePath]);
+
+    await act(async () => resolveDetail(detail));
+    expect((scene.result.current as MeshStandardMaterial).map).toBe(detail);
+    expect(modal.result.current).toBe(scene.result.current);
+    scene.unmount();
+    modal.unmount();
+  } finally {
+    loader.mockRestore();
+    textureCache.clear();
+  }
+});
+
+it.each(["overview", "detail"] as const)(
+  "handles a zoom during the initial request when %s finishes first",
+  async (first) => {
+    const planet = planetData.find((body) => body.name === "Mars")!;
+    const { overviewPath, texturePath } = PLANET_TEXTURES.Mars;
+    type Quality = "overview" | "detail";
+    const requests = new Map<string, (texture: Texture) => void>();
+    const loader = vi.spyOn(TextureLoader.prototype, "loadAsync")
+      .mockImplementation((path) => new Promise<Texture>((resolve) => requests.set(path, resolve)));
+    textureCache.clear();
+    const scene = renderHook(
+      ({ quality }: { quality: Quality }) => usePlanetMaterial(planet, quality),
+      { initialProps: { quality: "overview" as Quality } },
+    );
+    try {
+      scene.rerender({ quality: "detail" });
+      const detail = new Texture();
+      const preview = new Texture();
+      if (first === "overview") {
+        await act(async () => requests.get(overviewPath)!(preview));
+        expect((scene.result.current as MeshStandardMaterial).map).toBe(preview);
+        await act(async () => requests.get(texturePath)!(detail));
+      } else {
+        await act(async () => requests.get(texturePath)!(detail));
+        await act(async () => requests.get(overviewPath)!(preview));
+      }
+      expect((scene.result.current as MeshStandardMaterial).map).toBe(detail);
+    } finally {
+      scene.unmount();
+      loader.mockRestore();
+      textureCache.clear();
+    }
+  },
+);

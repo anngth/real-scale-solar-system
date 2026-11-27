@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { lazy, Suspense, useState, useCallback, useRef, useEffect } from "react";
 import {
   validateDate,
   isDateInAccurateRange,
@@ -8,14 +8,19 @@ import {
 import { useDateTransition } from "@/features/date-mode/application/useDateTransition";
 import { AnimationSpeedControl } from "@/features/simulation-control/ui/animation-speed-control";
 import { TransitionProgress } from "@/components/date-picker/transition-progress";
-import { HistoricalEventsPanel } from "@/features/historical-events/ui/historical-events-panel";
-import { HistoricalEvent } from "@/features/historical-events/data/historical-events-types";
+import type { HistoricalEvent } from "@/features/historical-events/data/historical-events-types";
 import {
   ANIMATION_SPEED_STORAGE_KEY,
   DEFAULT_ANIMATION_SPEED,
   parseStoredAnimationSpeed,
 } from "@/features/date-mode/domain/animation-speed";
 import { History } from "lucide-react";
+
+const HistoricalEventsPanel = lazy(() =>
+  import("@/features/historical-events/ui/historical-events-panel").then((module) => ({
+    default: module.HistoricalEventsPanel,
+  })),
+);
 
 // Date picker configuration
 const DATE_PICKER_CONFIG = {
@@ -139,7 +144,7 @@ export function DatePicker({
 }: DatePickerProps) {
   const [error, setError] = useState<string | null>(null);
   const [showHistorical, setShowHistorical] = useState(false);
-  const [showHistoricalPanel, setShowHistoricalPanel] = useState(false);
+  const [showHistoricalPanel, setShowHistoricalPanel] = useState<boolean | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load saved animation speed from localStorage
@@ -461,7 +466,7 @@ export function DatePicker({
         onClick={() => setShowHistoricalPanel(!showHistoricalPanel)}
         className="w-full mt-2 px-2 py-2 text-xs bg-purple-500/20 hover:bg-purple-500/30 rounded transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
         disabled={transitionState.isAnimating}
-        aria-expanded={showHistoricalPanel}
+        aria-expanded={showHistoricalPanel === true}
         aria-haspopup="dialog"
       >
         <History className="w-3.5 h-3.5" />
@@ -469,12 +474,16 @@ export function DatePicker({
       </button>
 
       {/* Historical Events Panel */}
-      <HistoricalEventsPanel
-        isOpen={showHistoricalPanel}
-        onClose={() => setShowHistoricalPanel(false)}
-        onSelectEvent={handleHistoricalEventSelect}
-        currentDate={selectedDate}
-      />
+      {showHistoricalPanel !== null && (
+        <Suspense fallback={showHistoricalPanel && <span role="status">Loading events…</span>}>
+          <HistoricalEventsPanel
+            isOpen={showHistoricalPanel}
+            onClose={() => setShowHistoricalPanel(false)}
+            onSelectEvent={handleHistoricalEventSelect}
+            currentDate={selectedDate}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

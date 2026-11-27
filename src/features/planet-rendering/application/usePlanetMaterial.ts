@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   MeshStandardMaterial,
   MeshBasicMaterial,
@@ -8,11 +8,12 @@ import {
 } from "three";
 import { PlanetData } from "@/data/planet-types";
 import { PLANET_TEXTURES } from "@/lib/planet-textures/texture-config";
-import { textureCache, TextureCacheKey } from "@/utils/texture-cache";
+import { textureCache } from "@/utils/texture-cache";
 
 // Module-level cache for fallback materials to prevent GPU memory leaks
 const fallbackMaterialCache = new Map<string, MeshStandardMaterial>();
-const texturedMaterialCache = new Map<string, Material>();
+const texturedMaterials = new WeakMap<Texture, Material>();
+const pendingTextures = new Map<string, Promise<Texture>>();
 
 /**
  * Gets or creates a cached fallback material for the given color.
@@ -31,198 +32,84 @@ function getOrCreateFallbackMaterial(color: string): MeshStandardMaterial {
   return cachedFallback;
 }
 
-function getTexturedMaterialCacheKey(
-  planetName: string,
-  materialType: "standard" | "basic",
-): string {
-  return `${planetName}-${materialType}`;
+function loadTexture(name: string, path: string): Promise<Texture> {
+  const key = { type: name, path };
+  const cached = textureCache.get(key);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = pendingTextures.get(path);
+  if (pending) return pending;
+
+  const request = new TextureLoader()
+    .loadAsync(path)
+    .then((texture) => {
+      textureCache.set(key, texture);
+      return texture;
+    })
+    .finally(() => pendingTextures.delete(path));
+  pendingTextures.set(path, request);
+  return request;
 }
 
-function getOrCreateTexturedMaterial(
-  planetName: string,
-  texture: Texture,
-  materialType: "standard" | "basic",
-): Material {
-  const cacheKey = getTexturedMaterialCacheKey(planetName, materialType);
-  const cached = texturedMaterialCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const material = createMaterialWithTexture(texture, materialType);
-  texturedMaterialCache.set(cacheKey, material);
+function materialFor(texture: Texture, type: "basic" | "standard"): Material {
+  const cached = texturedMaterials.get(texture);
+  if (cached) return cached;
+  const material = createMaterialWithTexture(texture, type);
+  texturedMaterials.set(texture, material);
+  texture.addEventListener("dispose", () => material.dispose());
   return material;
 }
 
-function isSharedMaterial(material: Material): boolean {
-  for (const cached of fallbackMaterialCache.values()) {
-    if (cached === material) return true;
-  }
-  for (const cached of texturedMaterialCache.values()) {
-    if (cached === material) return true;
-  }
-  return false;
-}
-
-/**
- * Custom hook for loading and managing planet materials with realistic texture images.
- * Replaces Canvas-based procedural texture generation with TextureLoader for photorealistic planets.
- *
- * Features:
- * - Asynchronous texture loading with loading states
- * - Texture caching to prevent duplicate loads
- * - Error handling with fallback to base colors (planet.color) when textures fail to load
- * - Proper cleanup of materials without disposing shared cached textures
- * - Special handling for Sun (emissive MeshBasicMaterial)
- *
- * IMPORTANT: When textures are successfully loaded, the material color property is NOT set.
- * This prevents tinting of realistic planetary textures. The planet.color from PlanetData
- * is ONLY used as a fallback when:
- * 1. No texture configuration exists for the planet (PLANET_TEXTURES[planet.name] is undefined)
- * 2. Texture loading fails (onError callback)
- * 3. Material is still loading (temporary fallback during async load)
- */
-export function usePlanetMaterial(planet: PlanetData): Material {
-  const [material, setMaterial] = useState<Material | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const materialRef = useRef<Material | null>(null);
-  const loaderRef = useRef<TextureLoader | null>(null);
-  const isMountedRef = useRef(true);
-  // Initialize fallback material using useMemo to avoid render-time side effects
-  // This memoizes the fallback material and recomputes only when planet.color changes
-  const fallbackMaterial = useMemo(
-    () => getOrCreateFallbackMaterial(planet.color),
-    [planet.color],
-  );
+export function usePlanetMaterial(
+  planet: PlanetData,
+  quality: "overview" | "detail" = "detail",
+): Material {
+  const config = PLANET_TEXTURES[planet.name];
+  const path = quality === "overview" ? config?.overviewPath : config?.texturePath;
+  const [loaded, setLoaded] = useState<{
+    path: string;
+    material: Material;
+  } | null>(null);
 
   useEffect(() => {
-    isMountedRef.current = true;
-    let cancelled = false;
-
-    // Get texture configuration for this planet
-    const config = PLANET_TEXTURES[planet.name];
-
-    if (!config) {
-      // No texture configuration found - fallback to color-based material
-      console.warn(`No texture configuration found for planet: ${planet.name}`);
-      // Use the pre-initialized fallback material
-      materialRef.current = fallbackMaterial;
-      // Use setTimeout to defer state updates and avoid cascading renders
-      setTimeout(() => {
-        if (!cancelled && isMountedRef.current) {
-          setMaterial(fallbackMaterial);
-          setIsLoading(false);
+    if (!config || !path) return;
+    let active = true;
+    const pendingPreview = path !== config.overviewPath
+      ? pendingTextures.get(config.overviewPath)
+      : undefined;
+    if (pendingPreview) {
+      void pendingPreview.then((texture) => {
+        if (active) {
+          const preview = {
+            path: config.overviewPath,
+            material: materialFor(texture, config.materialType),
+          };
+          setLoaded((current) => current?.path === path ? current : preview);
         }
-      }, 0);
-      return () => {
-        cancelled = true;
-        isMountedRef.current = false;
-      };
+      }, () => {
+        // The overview request reports its own error. Detail can still succeed.
+      });
     }
-
-    // Create cache key for this texture
-    const cacheKey: TextureCacheKey = {
-      type: planet.name,
-      path: config.texturePath,
-    };
-
-    // Check if texture is already cached
-    const cachedTexture = textureCache.get(cacheKey);
-
-    if (cachedTexture) {
-      const mat = getOrCreateTexturedMaterial(
-        planet.name,
-        cachedTexture,
-        config.materialType,
-      );
-      materialRef.current = mat;
-      // Use setTimeout to defer state updates and avoid cascading renders
-      setTimeout(() => {
-        if (!cancelled && isMountedRef.current) {
-          setMaterial(mat);
-          setIsLoading(false);
-        }
-      }, 0);
-      return () => {
-        cancelled = true;
-        isMountedRef.current = false;
-        // Don't dispose mat here - it uses cached texture
-      };
-    }
-
-    // Load texture asynchronously
-    const loader = new TextureLoader();
-    loaderRef.current = loader;
-
-    loader.load(
-      config.texturePath,
-      // onLoad callback
+    loadTexture(config.name, path).then(
       (texture) => {
-        if (cancelled || !isMountedRef.current) return;
-
-        // Store texture in cache for reuse
-        textureCache.set(cacheKey, texture);
-
-        // Create material with loaded texture
-        const mat = getOrCreateTexturedMaterial(
-          planet.name,
-          texture,
-          config.materialType,
-        );
-        materialRef.current = mat;
-        setMaterial(mat);
-        setIsLoading(false);
-      },
-      // onProgress callback (optional)
-      undefined,
-      // onError callback
-      (error) => {
-        if (cancelled || !isMountedRef.current) return;
-
-        console.error(
-          `Failed to load texture for ${planet.name} from ${config.texturePath}:`,
-          error,
-        );
-
-        // Use the pre-initialized fallback material
-        materialRef.current = fallbackMaterial;
-        setMaterial(fallbackMaterial);
-        setIsLoading(false);
-      },
-    );
-
-    // Cleanup function
-    return () => {
-      cancelled = true;
-      isMountedRef.current = false;
-
-      // Dispose material but NOT cached textures or cached fallback materials (they're shared resources)
-      if (materialRef.current) {
-        const mat = materialRef.current as
-          | MeshStandardMaterial
-          | MeshBasicMaterial;
-
-        if (!isSharedMaterial(mat)) {
-          if (mat.map && !textureCache.has(cacheKey)) {
-            mat.map.dispose();
-          }
-          materialRef.current.dispose();
+        if (active) {
+          setLoaded({ path, material: materialFor(texture, config.materialType) });
         }
-        materialRef.current = null;
-      }
-
-      // Clear loader reference
-      loaderRef.current = null;
+      },
+      (error) => console.error(`Failed to load texture from ${path}:`, error),
+    );
+    return () => {
+      active = false;
     };
-  }, [planet.name, planet.color, fallbackMaterial]);
+  }, [config, path]);
 
-  // Return cached fallback material while the actual material is being prepared
-  // Fallback material is initialized using useState lazy initializer to avoid render-time side effects
-  if (isLoading || !material) {
-    return fallbackMaterial;
+  if (loaded && (loaded.path === path || loaded.path === config?.overviewPath)) {
+    return loaded.material;
   }
-
-  return material;
+  const preview = config && textureCache.get({ type: config.name, path: config.overviewPath });
+  return preview
+    ? materialFor(preview, config.materialType)
+    : getOrCreateFallbackMaterial(planet.color);
 }
 
 /**
