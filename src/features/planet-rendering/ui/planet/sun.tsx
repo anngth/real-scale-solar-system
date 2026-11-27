@@ -5,7 +5,7 @@ import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Sphere } from "@react-three/drei";
 import type { Mesh } from "three";
 import { sunData } from "@/data/planet-data";
-import { usePlanetMaterial } from "@/features/planet-rendering/application/usePlanetMaterial";
+import { useScenePlanetMaterial } from "@/features/planet-rendering/application/useScenePlanetMaterial";
 import type { SimulationMode } from "@/features/simulation-control/state/simulation-mode-context";
 
 interface SunProps {
@@ -22,7 +22,7 @@ export function Sun({
 }: SunProps) {
   const sunRef = useRef<Mesh | null>(null);
   const glowRef = useRef<Mesh | null>(null);
-  const sunMaterial = usePlanetMaterial(sunData);
+  const { material: sunMaterial, onBeforeRender } = useScenePlanetMaterial(sunData, 109.2);
 
   // Check if we're in Date Mode
   const isDateMode = simulationMode === "date";
@@ -56,6 +56,7 @@ export function Sun({
       {/* Sun core - TRUE TO SCALE */}
       <Sphere
         ref={sunRef}
+        onBeforeRender={onBeforeRender}
         args={[109.2, 64, 64]} // Real scale: Sun = 109.2x Earth diameter
         position={[0, 0, 0]}
       >

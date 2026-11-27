@@ -7,7 +7,7 @@ import { Mesh, Group } from "three";
 import { PlanetData } from "@/data/planet-types";
 import { PlanetLabel } from "./planet-label";
 import { usePlanetMovement } from "@/features/planet-rendering/application/usePlanetMovement";
-import { usePlanetMaterial } from "@/features/planet-rendering/application/usePlanetMaterial";
+import { useScenePlanetMaterial } from "@/features/planet-rendering/application/useScenePlanetMaterial";
 import { PlanetRings } from "./planet-rings";
 import { OrbitPath } from "./orbit-path";
 import { PlanetAtmosphericGlow } from "./planet-atmospheric-glow";
@@ -40,9 +40,6 @@ export const Planet = memo(function Planet({
   const planetRef = useRef<Mesh | null>(null);
   const orbitRef = useRef<Group | null>(null);
 
-  // In main simulation: keep Sun detailed, simplify others to reduce render cost
-  const planetMaterial = usePlanetMaterial(planet);
-
   // TRUE TO SCALE - No artificial scaling for visibility
   // Using real astronomical proportions
 
@@ -58,6 +55,8 @@ export const Planet = memo(function Planet({
   // For visualization: Earth = 1 unit, Sun = 109.2 units
   const EARTH_DIAMETER_UNITS = 1; // Earth = 1 unit
   const scaledSize = planet.diameterRelativeEarth * EARTH_DIAMETER_UNITS;
+
+  const { material: planetMaterial, onBeforeRender } = useScenePlanetMaterial(planet, scaledSize);
 
   // Initialize and update planet movement
   usePlanetMovement({
@@ -87,6 +86,7 @@ export const Planet = memo(function Planet({
       <group ref={orbitRef}>
         <Sphere
           ref={planetRef}
+          onBeforeRender={onBeforeRender}
           args={[scaledSize, 32, 32]}
           onClick={handlePlanetClick}
         >

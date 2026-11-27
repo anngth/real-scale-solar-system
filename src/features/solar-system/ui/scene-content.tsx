@@ -4,10 +4,11 @@ import { planetData } from "@/data/planet-data";
 import { BeltRegions } from "@/features/belt-regions/ui/index";
 import { Planet } from "@/features/planet-rendering/ui/planet/index";
 import { Sun } from "@/features/planet-rendering/ui/planet/sun";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SimulationMode } from "@/features/simulation-control/state/simulation-mode-context";
 
 type SceneContentProps = {
+  isMobile: boolean;
+  onCameraInteraction: (active: boolean) => void;
   simulationSpeed: number;
   simulationMode: SimulationMode;
   selectedDate: Date;
@@ -20,6 +21,8 @@ type SceneContentProps = {
 };
 
 export function SceneContent({
+  isMobile,
+  onCameraInteraction,
   simulationSpeed,
   simulationMode,
   selectedDate,
@@ -30,7 +33,6 @@ export function SceneContent({
   showOrbitPath,
   showBeltRegions,
 }: SceneContentProps) {
-  const isMobile = useIsMobile();
   const starCount = isMobile ? 1500 : 3000;
 
   return (
@@ -67,6 +69,8 @@ export function SceneContent({
       />
       <OrbitControls
         makeDefault
+        onStart={isMobile ? () => onCameraInteraction(true) : undefined}
+        onEnd={() => onCameraInteraction(false)}
         enableZoom
         enableRotate
         minDistance={100}

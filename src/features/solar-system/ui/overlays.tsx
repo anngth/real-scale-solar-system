@@ -1,11 +1,16 @@
 import { lazy, Suspense } from "react";
 import { PlanetData } from "@/data/planet-types";
-import { DatePicker } from "@/features/date-mode/ui/date-picker";
 import { ControlModal } from "@/features/planet-modal/ui/control";
 import { ModeToggleButton } from "@/features/simulation-control/ui/mode-toggle-button";
 import { GitHubButton } from "@/components/button/github-button";
 import { MemoryMonitor } from "@/components/debug/memory-monitor";
 import type { SimulationMode } from "@/features/simulation-control/state/simulation-mode-context";
+
+const DatePicker = lazy(() =>
+  import("@/features/date-mode/ui/date-picker").then((module) => ({
+    default: module.DatePicker,
+  })),
+);
 
 const ModalOverlay = lazy(() =>
   import("@/features/planet-modal/ui/modal-overlay").then((module) => ({
@@ -75,7 +80,9 @@ export function SolarSystemOverlays({
           className="absolute top-16 left-4 z-controls animate-in fade-in duration-500"
           style={{ animation: "fadeIn 500ms ease-in-out" }}
         >
-          <DatePicker selectedDate={selectedDate} onDateChange={onDateChange} />
+          <Suspense fallback={<span role="status" className="text-sm text-white">Loading date controls…</span>}>
+            <DatePicker selectedDate={selectedDate} onDateChange={onDateChange} />
+          </Suspense>
         </div>
       )}
 

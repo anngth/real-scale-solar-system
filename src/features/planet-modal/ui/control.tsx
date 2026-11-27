@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, type ChangeEvent } from "react";
-import { motion } from "framer-motion";
 import { Settings, X } from "lucide-react";
 
 interface SpeedControlProps {
@@ -148,11 +147,8 @@ export function ControlModal({
   return (
     <>
       {isPanelVisible ? (
-        <motion.div
-          className="fixed bottom-4 right-4 bg-black/80 text-white p-3 rounded-lg backdrop-blur-sm border border-white/20 shadow-lg shadow-blue-500/10 z-controls w-[380px]"
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3 }}
+        <div
+          className="control-enter fixed bottom-4 right-4 bg-black/80 text-white p-3 rounded-lg backdrop-blur-sm border border-white/20 shadow-lg shadow-blue-500/10 z-controls w-[380px]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-2">
@@ -332,17 +328,15 @@ export function ControlModal({
               </div>
             )}
           </div>
-        </motion.div>
+        </div>
       ) : (
-        <motion.button
-          className="fixed bottom-4 right-4 bg-black/80 text-white p-2 rounded-full backdrop-blur-sm border border-white/20 shadow-lg shadow-blue-500/10 hover:bg-gray-800 z-controls"
+        <button
+          className="control-enter fixed bottom-4 right-4 bg-black/80 text-white p-2 rounded-full backdrop-blur-sm border border-white/20 shadow-lg shadow-blue-500/10 hover:bg-gray-800 z-controls"
           onClick={togglePanel}
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
           title="Show speed controls"
         >
           <Settings size={20} />
-        </motion.button>
+        </button>
       )}
     </>
   );

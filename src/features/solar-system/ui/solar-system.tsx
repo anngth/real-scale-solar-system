@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { SolarSystemProviders } from "@/features/solar-system/application/solar-system-providers";
 import { useSolarSystemController } from "@/features/solar-system/application/useSolarSystemController";
@@ -10,16 +11,19 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 function SolarSystemContent() {
   const controller = useSolarSystemController();
   const isMobile = useIsMobile();
+  const [movingCamera, setMovingCamera] = useState(false);
   const isPlanetModalOpen = controller.selectedPlanet !== null;
 
   return (
     <div className="w-full h-screen relative bg-gradient-to-b from-black via-gray-900 to-black overflow-hidden">
       <Canvas
         camera={{ position: [0, 2000, 4000], fov: 60, near: 0.1, far: 120000 }}
-        dpr={isMobile ? [1, 1.5] : [1, 2]}
+        dpr={isMobile && movingCamera ? 1 : [1, isMobile ? 1.5 : 2]}
         frameloop={isPlanetModalOpen ? "never" : "always"}
       >
         <SceneContent
+          isMobile={isMobile}
+          onCameraInteraction={setMovingCamera}
           simulationSpeed={controller.simulationSpeed}
           simulationMode={controller.mode}
           selectedDate={controller.selectedDate}
